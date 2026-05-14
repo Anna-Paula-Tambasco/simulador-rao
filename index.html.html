@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Risk Copilot - Simulador de Ressonância (RAO)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #f8fafc; }
+        .glass-panel { background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); }
+        input[type=range] { accent-color: #3b82f6; }
+        /* Smooth transition for UI elements */
+        #heave-card, #warning-box { transition: all 0.3s ease; }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+    <div class="max-w-6xl mx-auto">
+        <!-- Header -->
+        <header class="mb-8 border-b border-slate-700 pb-4">
+            <h1 class="text-3xl font-bold text-blue-400 flex items-center gap-3">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Risk Copilot | Análise de Ressonância (Heave RAO)
+            </h1>
+            <p class="text-slate-400 mt-2">Visualização dinâmica do Operador de Amplitude de Resposta para um FPSO VLCC (L = 330m) em Búzios.</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            
+            <!-- Controles -->
+            <div class="glass-panel p-6 rounded-xl col-span-1 flex flex-col gap-6">
+                <div>
+                    <h2 class="text-xl font-semibold mb-4 text-slate-200">Painel de Controle</h2>
+                    
+                    <label class="block text-sm font-medium text-slate-400 mb-1">Período de Pico da Onda (T<sub>p</sub>): <span id="tp-val" class="text-white font-bold text-lg">10.0</span> s</label>
+                    <input type="range" id="tp-slider" min="4" max="20" step="0.1" value="10" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                    <div class="flex justify-between text-xs text-slate-500 mt-1">
+                        <span>4s (Ondas Curtas)</span>
+                        <span>20s (Swell Longo)</span>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-slate-400 mb-2">Modelo de Espectro de Mar:</label>
+                    <select id="spectrum-select" class="w-full bg-slate-800 border border-slate-600 text-white rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="pm">Pierson-Moskowitz (Mar Totalmente Desenvolvido)</option>
+                        <option value="jonswap" selected>JONSWAP (Mar do Norte / Brasil)</option>
+                    </select>
+                </div>
+
+                <div class="mt-4 border-t border-slate-700 pt-4">
+                    <h3 class="text-sm font-medium text-slate-400 mb-2">Simulação (Considerando Onda Hs = 2.0m)</h3>
+                    
+                    <div class="bg-slate-800 rounded-lg p-4 mb-3 border-l-4 border-blue-500" id="rao-card">
+                        <p class="text-xs text-slate-400 uppercase tracking-wider">Multiplicador RAO</p>
+                        <p class="text-2xl font-bold text-white" id="rao-output">1.00 x</p>
+                    </div>
+
+                    <div class="bg-slate-800 rounded-lg p-4 border-l-4 border-emerald-500" id="heave-card">
+                        <p class="text-xs text-slate-400 uppercase tracking-wider">Balanço Vertical do Navio (Heave)</p>
+                        <p class="text-2xl font-bold text-white" id="heave-output">2.00 m</p>
+                    </div>
+                </div>
+
+                <div id="warning-box" class="hidden mt-2 bg-red-900/50 border border-red-500 rounded-lg p-4 animate-pulse">
+                    <p class="text-red-400 font-bold text-sm flex items-center gap-2">
+                        ⚠️ ALERTA DE RESSONÂNCIA
+                    </p>
+                    <p class="text-red-200 text-xs mt-1">
+                        A plataforma está sofrendo amplificação dinâmica. O movimento do casco é maior que a altura da própria onda!
+                    </p>
+                </div>
+            </div>
+
+            <!-- Gráfico -->
+            <div class="glass-panel p-6 rounded-xl col-span-1 lg:grid-cols-2 lg:col-span-2 relative">
+                <h2 class="text-xl font-semibold mb-2 text-slate-200 text-center">Curva de Transferência (RAO vs Período da Onda)</h2>
+                <div class="absolute top-8 right-8 flex gap-2">
+                    <span class="inline-flex items-center gap-1.5 py-1 px-3 rounded-md text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">
+                        <span class="w-2 h-2 rounded-full bg-red-500"></span> Zona de Perigo (13s - 16s)
+                    </span>
+                </div>
+                <div class="relative h-[320px] w-full mt-8">
+                    <canvas id="raoChart"></canvas>
+                </div>
+                
+                <div class="mt-4 text-sm text-slate-400 bg-slate-800/50 p-4 rounded-lg">
+                    <p><strong>A Física:</strong> Quando o período da onda (T<sub>p</sub>) se aproxima de <strong>14.5s</strong>, o comprimento da onda engole o FPSO (L ≈ 330m). Note como o modelo <strong>JONSWAP</strong> concentra a energia e gera um pico de resposta muito mais violento do que o Pierson-Moskowitz.</p>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- NOVO: ANIMAÇÃO DO GÊMEO DIGITAL 2D -->
+        <div class="glass-panel p-6 rounded-xl w-full relative overflow-hidden">
+            <h2 class="text-xl font-semibold mb-4 text-slate-200 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                Gêmeo Digital (Simulação Física em Tempo Real)
+            </h2>
+            <div class="relative w-full h-[250px] bg-slate-900 rounded-lg border border-slate-700 overflow-hidden shadow-inner">
+                <!-- O Canvas que desenha o navio e a onda -->
+                <canvas id="shipCanvas" class="w-full h-full block"></canvas>
+                
+                <!-- HUD Overlays na animação -->
+                <div class="absolute top-4 left-4 bg-black/60 p-2 rounded border border-slate-600 text-xs text-slate-300 backdrop-blur-sm">
+                    <p>Altura da Onda (Hs): <span class="text-white font-bold">2.0 m</span></p>
+                    <p>Comprimento da Onda (λ): <span id="lambda-val" class="text-blue-400 font-bold">-- m</span></p>
+                </div>
+            </div>
+
+            <!-- GUIA RÁPIDO PARA A APRESENTAÇÃO -->
+            <div class="mt-5 p-4 rounded-lg bg-blue-900/20 border border-blue-500/30">
+                <h3 class="text-blue-400 font-semibold text-sm mb-3 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Ficha Técnica das Escalas e Grandezas
+                </h3>
+                <ul class="text-xs text-slate-300 space-y-2 list-disc list-inside">
+                    <li><strong class="text-slate-100">Escala Horizontal (X) - 1:1 Real:</strong> O eixo horizontal não possui distorção. O FPSO VLCC possui 330m de comprimento (L). Quando o comprimento da onda (λ) se aproxima de 330m (T<sub>p</sub> = 14.5s), ocorre o fenômeno do encaixe físico da ressonância.</li>
+                    <li><strong class="text-slate-100">Escala Vertical (Y) - Exagero Didático (12x):</strong> Para garantir a visualização cinemática na tela, o eixo Y possui ganho visual de 12x. Na vida real (escala 1:1), a onda de 2m ficaria contida dentro da linha de calado submerso, pois o navio possui cerca de 25m de altura estrutural (pontal).</li>
+                    <li><strong class="text-slate-100">A Mecânica do Heave:</strong> O resultado visual é governado pela relação matemática: <strong>H<sub>s</sub></strong> (Excitação da Onda) &times; <strong>RAO</strong> (Operador de Transferência do Casco) = <strong>Heave</strong> (Movimento final real do navio).</li>
+                </ul>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- LÓGICA DO GRÁFICO RAO E UI ---
+        const tpSlider = document.getElementById('tp-slider');
+        const tpVal = document.getElementById('tp-val');
+        const spectrumSelect = document.getElementById('spectrum-select');
+        const raoOutput = document.getElementById('rao-output');
+        const heaveOutput = document.getElementById('heave-output');
+        const heaveCard = document.getElementById('heave-card');
+        const warningBox = document.getElementById('warning-box');
+        const lambdaVal = document.getElementById('lambda-val');
+        const raoCard = document.getElementById('rao-card');
+
+        // Constantes da embarcação
+        const Tn = 14.5; // Período natural de Heave do VLCC (Ressonância)
+        const waveHeight = 2.0; // Onda fixa para o simulador de movimento
+        
+        // Variáveis globais para a animação ler
+        let globalCurrentTp = 10.0;
+        let globalCurrentHeave = 0;
+        let globalDanger = false;
+
+        // Função aproximada para gerar a curva RAO
+        function calculateRAO(T, dampingRatio) {
+            if (T === 0) return 0;
+            const r = Tn / T;
+            const denominator = Math.sqrt(Math.pow(1 - Math.pow(r, 2), 2) + Math.pow(2 * dampingRatio * r, 2));
+            return 1 / denominator;
+        }
+
+        const verticalLinePlugin = {
+            id: 'verticalLine',
+            afterDraw: (chart) => {
+                if (chart.tooltip?._active?.length) {
+                    let activePoint = chart.tooltip._active[0];
+                    let ctx = chart.ctx;
+                    let x = activePoint.element.x;
+                    let topY = chart.scales.y.top;
+                    let bottomY = chart.scales.y.bottom;
+
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.moveTo(x, topY);
+                    ctx.lineTo(x, bottomY);
+                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = '#3b82f6';
+                    ctx.setLineDash([5, 5]);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
+        };
+
+        const periods = [];
+        for (let t = 4; t <= 20; t += 0.2) {
+            periods.push(t.toFixed(1));
+        }
+
+        let chartInstance = null;
+
+        function updateChart() {
+            globalCurrentTp = parseFloat(tpSlider.value);
+            tpVal.innerText = globalCurrentTp.toFixed(1);
+            
+            // FÍSICA: Comprimento da onda em águas profundas (lambda = g/(2*pi) * T^2)
+            const wavelength = 1.56 * Math.pow(globalCurrentTp, 2);
+            lambdaVal.innerText = wavelength.toFixed(0) + " m";
+            
+            const isJonswap = spectrumSelect.value === 'jonswap';
+            const damping = isJonswap ? 0.18 : 0.35; 
+            
+            const raoData = periods.map(t => calculateRAO(parseFloat(t), damping));
+            
+            const currentRAO = calculateRAO(globalCurrentTp, damping);
+            globalCurrentHeave = currentRAO * waveHeight;
+
+            raoOutput.innerText = currentRAO.toFixed(2) + " x";
+            heaveOutput.innerText = globalCurrentHeave.toFixed(2) + " m";
+
+            if (currentRAO > 1.05) {
+                globalDanger = true;
+                warningBox.classList.remove('hidden');
+                heaveCard.classList.replace('border-emerald-500', 'border-red-500');
+                heaveOutput.classList.replace('text-white', 'text-red-400');
+                raoCard.classList.replace('border-blue-500', 'border-red-500');
+                raoOutput.classList.replace('text-white', 'text-red-400');
+            } else {
+                globalDanger = false;
+                warningBox.classList.add('hidden');
+                heaveCard.classList.replace('border-red-500', 'border-emerald-500');
+                heaveOutput.classList.replace('text-red-400', 'text-white');
+                raoCard.classList.replace('border-red-500', 'border-blue-500');
+                raoOutput.classList.replace('text-red-400', 'text-white');
+            }
+
+            if (chartInstance) {
+                chartInstance.data.datasets[0].data = raoData;
+                chartInstance.data.datasets[0].label = isJonswap ? 'RAO (Espectro JONSWAP)' : 'RAO (Espectro Pierson-Moskowitz)';
+                chartInstance.data.datasets[0].borderColor = isJonswap ? '#f43f5e' : '#38bdf8';
+                chartInstance.data.datasets[0].backgroundColor = isJonswap ? 'rgba(244, 63, 94, 0.1)' : 'rgba(56, 189, 248, 0.1)';
+                
+                const index = periods.findIndex(p => Math.abs(parseFloat(p) - globalCurrentTp) < 0.1);
+                if(index !== -1) {
+                    chartInstance.setActiveElements([{datasetIndex: 0, index: index}]);
+                    chartInstance.tooltip.setActiveElements([{datasetIndex: 0, index: index}], {x: 0, y: 0});
+                }
+                chartInstance.update();
+            } else {
+                initChart(raoData, isJonswap, globalCurrentTp);
+            }
+        }
+
+        function initChart(data, isJonswap, currentTp) {
+            const ctx = document.getElementById('raoChart').getContext('2d');
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: periods,
+                    datasets: [{
+                        label: 'RAO (Espectro JONSWAP)',
+                        data: data,
+                        borderColor: '#f43f5e',
+                        backgroundColor: 'rgba(244, 63, 94, 0.1)',
+                        borderWidth: 3,
+                        pointRadius: 0,
+                        pointHoverRadius: 6,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                plugins: [verticalLinePlugin],
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { intersect: false, mode: 'index' },
+                    scales: {
+                        x: { title: { display: true, text: 'Período da Onda - Tp (segundos)', color: '#94a3b8' }, ticks: { color: '#64748b' }, grid: { color: '#334155' } },
+                        y: { title: { display: true, text: 'RAO (Amplitude)', color: '#94a3b8' }, ticks: { color: '#64748b' }, grid: { color: '#334155' }, min: 0, max: 3.0 }
+                    },
+                    plugins: { legend: { labels: { color: '#f8fafc' } } }
+                },
+                plugins: [{
+                    id: 'resonanceZone',
+                    beforeDraw: (chart) => {
+                        const ctx = chart.ctx;
+                        const xAxis = chart.scales.x;
+                        const yAxis = chart.scales.y;
+                        const startIdx = periods.findIndex(p => parseFloat(p) >= 13);
+                        const endIdx = periods.findIndex(p => parseFloat(p) >= 16);
+                        if(startIdx !== -1 && endIdx !== -1) {
+                            const startX = xAxis.getPixelForValue(periods[startIdx]);
+                            const endX = xAxis.getPixelForValue(periods[endIdx]);
+                            ctx.save();
+                            ctx.fillStyle = 'rgba(239, 68, 68, 0.05)';
+                            ctx.fillRect(startX, yAxis.top, endX - startX, yAxis.bottom - yAxis.top);
+                            ctx.restore();
+                        }
+                    }
+                }, verticalLinePlugin]
+            });
+
+            const index = periods.findIndex(p => Math.abs(parseFloat(p) - currentTp) < 0.1);
+            if(index !== -1) chartInstance.setActiveElements([{datasetIndex: 0, index: index}]);
+        }
+
+        tpSlider.addEventListener('input', updateChart);
+        spectrumSelect.addEventListener('change', updateChart);
+        window.addEventListener('load', updateChart);
+
+
+        // --- LÓGICA DA ANIMAÇÃO DO GÊMEO DIGITAL (CANVAS 2D) ---
+        const canvas = document.getElementById('shipCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Ajustar canvas para alta resolução (Retina displays)
+        function resizeCanvas() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        let simTime = 0;
+        let lastTimestamp = 0;
+
+        function drawFPSO(x, y, scale, isDanger) {
+            ctx.save();
+            ctx.translate(x, y);
+            
+            // Fator de escala base do navio (L = 330m)
+            const hullLength = 330 * scale; 
+            const hullDepth = 25 * scale;
+            
+            // Sombra/Reflexo
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.fillRect(-hullLength/2 + 5, 5, hullLength, hullDepth);
+
+            // Casco Principal (Hull)
+            ctx.beginPath();
+            ctx.moveTo(-hullLength/2, 0); // Popa (esquerda)
+            ctx.lineTo(hullLength/2 * 0.8, 0); // Proa começo
+            ctx.lineTo(hullLength/2, -hullDepth * 0.3); // Bico da proa superior
+            ctx.lineTo(hullLength/2 * 0.9, hullDepth); // Fundo da proa
+            ctx.lineTo(-hullLength/2, hullDepth); // Fundo popa
+            ctx.closePath();
+            
+            // Cor do casco (Vermelho alerta se em ressonância)
+            ctx.fillStyle = isDanger ? '#ef4444' : '#475569';
+            ctx.fill();
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = isDanger ? '#f87171' : '#334155';
+            ctx.stroke();
+
+            // Superestrutura (Acomodações na proa)
+            ctx.fillStyle = '#f1f5f9';
+            ctx.fillRect(hullLength/2 * 0.6, -hullDepth * 1.5, hullLength * 0.15, hullDepth * 1.5);
+            
+            // Heliponto (Frente)
+            ctx.fillStyle = '#22c55e'; // Verde
+            ctx.beginPath();
+            ctx.moveTo(hullLength/2 * 0.75, -hullDepth * 1.5);
+            ctx.lineTo(hullLength/2 * 0.95, -hullDepth * 1.5);
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            // Módulos de Processamento (Topside)
+            ctx.fillStyle = '#94a3b8';
+            for(let i=0; i<4; i++) {
+                ctx.fillRect(-hullLength/4 + (i * hullLength * 0.15), -hullDepth * 0.8, hullLength * 0.1, hullDepth * 0.8);
+            }
+
+            // Torre do Flare (Popa)
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-hullLength/2 + hullLength*0.05, 0);
+            ctx.lineTo(-hullLength/2 + hullLength*0.05, -hullDepth * 2.5);
+            ctx.stroke();
+            // Fogo do flare
+            ctx.fillStyle = '#f97316';
+            ctx.beginPath();
+            ctx.arc(-hullLength/2 + hullLength*0.05, -hullDepth * 2.5 - 5, 4 + Math.random()*2, 0, Math.PI*2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function animateCanvas(timestamp) {
+            if (!lastTimestamp) lastTimestamp = timestamp;
+            const dt = (timestamp - lastTimestamp) / 1000; // Delta time em segundos
+            lastTimestamp = timestamp;
+            
+            // Fator de velocidade visual (para não ficar nem muito rápido nem muito lento)
+            simTime += dt * 2.0; 
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Escalas Visuais
+            const baseWaterLevel = canvas.height * 0.6;
+            const pxPerMeterX = canvas.width / 800; // Mostra ~800 metros de oceano na tela
+            // Exagero vertical: A altura da onda e o Heave são multiplicados por um fator para ficarem visíveis
+            const verticalExaggeration = 12; 
+
+            // Física da onda
+            const wavelengthMeters = 1.56 * Math.pow(globalCurrentTp, 2);
+            const k = (2 * Math.PI) / (wavelengthMeters * pxPerMeterX); // Número de onda (pixel space)
+            const omega = (2 * Math.PI) / globalCurrentTp; // Frequência angular
+            
+            const waveAmpPx = (waveHeight / 2) * verticalExaggeration;
+            const heaveAmpPx = globalCurrentHeave * verticalExaggeration;
+
+            // --- 1. DESENHAR O CÉU (Fundo) ---
+            const skyGradient = ctx.createLinearGradient(0, 0, 0, baseWaterLevel);
+            if (globalDanger) {
+                skyGradient.addColorStop(0, '#450a0a'); // Céu vermelho escuro
+                skyGradient.addColorStop(1, '#0f172a');
+            } else {
+                skyGradient.addColorStop(0, '#0f172a'); // Céu padrão
+                skyGradient.addColorStop(1, '#1e293b');
+            }
+            ctx.fillStyle = skyGradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // --- 2. DESENHAR O NAVIO (Ao fundo da onda frontal, para parecer que está na água) ---
+            const shipCenterPx = canvas.width / 2;
+            
+            // Calcular o deslocamento vertical do navio (Heave)
+            // O navio oscila no tempo. Desfasamento assumido como 0 para alinhamento didático com o centro
+            const shipYOffset = Math.cos(omega * simTime) * heaveAmpPx;
+            
+            // Calcular um pequeno Pitch (Arfagem) visual para ficar mais natural (A derivada da onda)
+            const pitchAngle = globalDanger ? Math.sin(omega * simTime) * 0.08 : Math.sin(omega * simTime) * 0.03;
+
+            ctx.save();
+            ctx.translate(shipCenterPx, baseWaterLevel + shipYOffset);
+            ctx.rotate(pitchAngle);
+            drawFPSO(0, -5, pxPerMeterX, globalDanger); // -5 para afundar um pouquinho o calado
+            ctx.restore();
+
+            // HUD do Navio (Setas indicativas de movimento)
+            if (globalCurrentHeave > 0.5) {
+                ctx.fillStyle = globalDanger ? '#ef4444' : '#38bdf8';
+                ctx.font = '12px Arial';
+                const setaSobe = Math.cos(omega * simTime) < 0 ? '↓' : '↑';
+                ctx.fillText(`Heave: ${setaSobe} ${Math.abs(shipYOffset / verticalExaggeration).toFixed(1)}m`, shipCenterPx - 30, baseWaterLevel - 80 + shipYOffset);
+            }
+
+            // --- 3. DESENHAR A SUPERFÍCIE DO MAR (Onda animada) ---
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height);
+            ctx.lineTo(0, baseWaterLevel);
+
+            for (let x = 0; x <= canvas.width; x += 5) {
+                // Equação da onda progressiva: y = A * cos(kx - wt)
+                // A onda move-se da direita para a esquerda
+                const yOffset = Math.cos(k * x + omega * simTime) * waveAmpPx;
+                ctx.lineTo(x, baseWaterLevel + yOffset);
+            }
+
+            ctx.lineTo(canvas.width, canvas.height);
+            ctx.closePath();
+
+            // Gradiente do Oceano
+            const seaGradient = ctx.createLinearGradient(0, baseWaterLevel - waveAmpPx, 0, canvas.height);
+            seaGradient.addColorStop(0, globalDanger ? 'rgba(153, 27, 27, 0.8)' : 'rgba(14, 165, 233, 0.8)'); // Topo da onda
+            seaGradient.addColorStop(1, 'rgba(2, 6, 23, 1)'); // Fundo do mar escuro
+            
+            ctx.fillStyle = seaGradient;
+            ctx.fill();
+
+            // Linha brilhante na crista da onda
+            ctx.strokeStyle = globalDanger ? '#f87171' : '#38bdf8';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // HUD Disclaimer (Aviso de Escala)
+            ctx.fillStyle = 'rgba(148, 163, 184, 0.6)'; // text-slate-400 com transparência
+            ctx.font = 'italic 10px Arial';
+            ctx.textAlign = 'right';
+            ctx.fillText('* Escala vertical (eixo Y) com exagero de 12x para visualização didática', canvas.width - 15, canvas.height - 15);
+            ctx.textAlign = 'left';
+
+            requestAnimationFrame(animateCanvas);
+        }
+
+        // Iniciar animação
+        requestAnimationFrame(animateCanvas);
+
+    </script>
+</body>
+</html>
