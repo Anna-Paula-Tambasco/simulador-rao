@@ -112,6 +112,21 @@
                     <p>Comprimento da Onda (λ): <span id="lambda-val" class="text-blue-400 font-bold">-- m</span></p>
                 </div>
             </div>
+
+            <!-- GUIA RÁPIDO PARA A APRESENTAÇÃO -->
+            <div class="mt-5 p-4 rounded-lg bg-blue-900/20 border border-blue-500/30">
+                <h3 class="text-blue-400 font-semibold text-sm mb-3 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Ficha Técnica das Escalas e Grandezas
+                </h3>
+                <ul class="text-xs text-slate-300 space-y-2 list-disc list-inside">
+                    <li><strong class="text-slate-100">Escala Horizontal (X) - 1:1 Real:</strong> O eixo horizontal não possui distorção. O FPSO VLCC possui 330m de comprimento (L). Quando o comprimento da onda (λ) se aproxima de 330m (T<sub>p</sub> = 14.5s), ocorre o fenômeno do encaixe físico da ressonância.</li>
+                    <li><strong class="text-slate-100">Escala Vertical (Y) - Exagero Didático (12x):</strong> Para garantir a visualização cinemática na tela, o eixo Y possui ganho visual de 12x. Na vida real (escala 1:1), a onda de 2m ficaria contida dentro da linha de calado submerso, pois o navio possui cerca de 25m de altura estrutural (pontal).</li>
+                    <li><strong class="text-slate-100">A Mecânica do Heave:</strong> O resultado visual é governado pela relação matemática: <strong>H<sub>s</sub></strong> (Excitação da Onda) &times; <strong>RAO</strong> (Operador de Transferência do Casco) = <strong>Heave</strong> (Movimento final real do navio).</li>
+                </ul>
+            </div>
         </div>
 
     </div>
@@ -450,6 +465,13 @@
             ctx.strokeStyle = globalDanger ? '#f87171' : '#38bdf8';
             ctx.lineWidth = 2;
             ctx.stroke();
+
+            // HUD Disclaimer (Aviso de Escala)
+            ctx.fillStyle = 'rgba(148, 163, 184, 0.6)'; // text-slate-400 com transparência
+            ctx.font = 'italic 10px Arial';
+            ctx.textAlign = 'right';
+            ctx.fillText('* Escala vertical (eixo Y) com exagero de 12x para visualização didática', canvas.width - 15, canvas.height - 15);
+            ctx.textAlign = 'left';
 
             requestAnimationFrame(animateCanvas);
         }
